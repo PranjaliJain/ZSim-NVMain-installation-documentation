@@ -1,0 +1,116 @@
+# ZSIM-NVMAIN SETUP
+This is the documentation to install ZSim-NVMain simulator on a Linux machine. The instructions to change the kernel version and gcc version of the machine in order to make it compatible with the simulator are also described in the documentation. 
+
+#Dependencies:
+1. Linux kernel version 3.x(preferably 3.13.11-991-generic) which is compatible with Ubuntu 14.04 LTS (required by Pin)
+	To change the kernel version of the machine :
+	a. Download any version you would like to install from the site http://kernel.ubuntu.com/~kernel-ppa/mainline/
+	b. Download the 5 linux header and image debian files of the required version from the site.
+	c. Copy all these .deb files in a folder in your linux system.
+	d. Using terminal enter the directory where these files are stored
+	e. Install all these packages, run   > sudo dpkg -i *.deb
+	f. Update grub menu   >sudo update-grub
+	g. Reboot the system hold Shift to enter grub menu
+	h. Select advanced options for ubuntu
+	i. Select the kernel version you want to boot with
+
+2. gcc>=4.6, g++
+	a. To change the gcc version of the machine to gcc-<x.y> , run in terminal :
+		> sudo apt-get install gcc-4.7 g++-4.7 gcc-4.7-multilib
+		> cd /usr/bin
+		> sudo mv gcc gcc.backup
+		> sudo mv g++ g++.backup
+		> sudo ln -s ./gcc-<x.y> ./gcc
+		> sudo ln -s ./g++-<x.y> ./g++
+	b. For g++ , run >sudo apt-get install g++ (Installs compatible version of g++)
+
+3. For linconfg : autoconf, automake, libtool, texinfo (need to be installed with sudo apt-get install)
+   Other libraries : libconfg, libhdf5, libelfg-dev,scons (are automatically installed on running install.sh)
+	[ To install these dependencies manually :
+	libhdf5 (v1.8.4 path 1 or higher) :  >sudo apt-get install libhdf5-dev
+	If ZSim is unable to locate libhdf5.so or libhdf5_hl.so at a particular location, first find the location of the files using > find 	/usr -iname "*hdf5.h*"   and create symbolic links as > sudo ln -s <target location> <original location>
+	libelfg  :  >sudo apt-get install libelfg-dev
+	scons :  >sudo apt-get install scons
+	libconfig++ :  >sudo apt-get install libconfig++-dev  ] 
+	  
+4. Pin (and xed) : are installed automatically on running install.sh
+	(Pin is compatible with kernel version : 3.13 and gcc version 3.4.6 to 4.7.2 (also 4.8))
+	(Pin 3.x is not compatible with ZSim)
+
+
+5. Steps :
+	1. Clone the ZSim+NVmain repository
+		> git clone https://github.com/AXLEproject/axle-zsim-nvmain
+	2. Clone the DRAMSim2 repository to the ZSim+NVmain root directory
+		> git clone https://github.com/umd-memsys/DRAMSim2
+	3. Clone the libconfig repository
+		> git clone https://github.com/hyperrealm/libconfig
+	4. In axle-zsim-nvmain/install.sh , change the version of pin (to pin-2.14-71313-gcc.4.4.7-linux)
+		Go to axle-zsim-nvmain directory using the terminal,
+		run  >./install.sh
+	5. Install boost libraries using 
+		> sudo apt-get install libboost-all-dev
+		Add PINPATH, NVMAINPATH, ZSIMPATH to environment
+		Find boost libraries (most probably it will be present in /usr/include/boost/ or /usr/lib/x86_64-linux-gnu)
+	6. Pin : In axle-zsim-nvmain/pin_kit
+		a. In axle-zsim-nvmain/pin_kit/source/include/pin/compiler_version_check2.H change CC_USED_ABI_VERSION != __GXX_ABI_VERSION  to 			CC_USED_ABI_VERSION > __GXX_ABI_VERSION
+		b. In axle-zsim-nvmain/pin_kit/source/tools , run  >make
+		c. Check if pin is made successfully. In terminal in axle-zsim-nvmain/pin_kit , run   > ./pin -help  or   > ./pin.sh -help
+	7. DRAMSim2 : In axle-zsim-nvmain/DRAMSim2
+		a. Run >make and >make libdramsim.so
+		b. In axle-zsim-nvmain/pin_kit/source/tools/Config/makefile.unix.config, change TOOL_LIBS := -lpin -lxed    to   
+			TOOL_LIBS := -lpin -lxed -L/path/to/dramsim/ -ldramsim   
+		c. Add DRAMSIMPATH environment variable to base directory of DRAMSim2                                                                                  
+	8. libconfig : In libconfig :
+		a. Download dependencies: autoconf, automake, libtool, texinfo
+			> sudo apt-get install autoconf
+			> sudo apt-get install automake
+			> sudo apt-get install libtool
+			> sudo apt-get install texinfo
+		b. At base directory of libconfig , run :
+			> autoreconf
+			> ./configure --prefix=<libconfig install path>
+			> make
+			> make check
+			> sudo make install
+		c. Set the LIBCONFIGPATH environment variable to base directory of libconfg
+
+	9. In axle-zsim-nvmain/nvmain/SConscript
+		Comment out  >from gem5_scons import Transform
+	10. In axle-zsim-nvmain/SConstruct file :
+		a. Remove the flag -Werror  
+		b. Change extras/xed2-intel64/lib to extras/xed-intel64/lib
+		c. Change intel64/lib-ext/libdwarf.a to intel64/lib-ext/libpindwarf.a
+	
+	11. Add paths CXX, CC, BOOST to environment (as specified below)  and compile 
+			> export CXX=/usr/bin/g++-4.8
+			> export CC=/usr/bin/gcc-4.8
+			> export BOOST=/usr/include/boost
+	 zsim:  > scons -j8
+
+	12. Launch a test run:
+			> ./build/opt/zsim tests/simple.cfg
+	
+	13. Default heap segment size is 1024MB and is specified in the file axle-zsim-nvmain/src/zsim_harness.cpp.
+		To check the value within machine's limit >sysctl kernel.shmmax
+		To set the value within machine’s limit change the value as required in zsim_harness.cpp
+
+		Example : 1024 MB is changed to 32 MB.
+		Change  > uint32_t gmSize = conf.get<uint32_t>("sim.gmMBytes", (1<<10) /*default 1024MB*/);  to
+				> uint32_t gmSize = conf.get<uint32_t>("sim.gmMBytes", (1<<5));
+	
+	14. The recommended value for -injection switch is dynamic. To set this execute the following command as root.
+			$ echo 0 > /proc/sys/kernel/yama/ptrace_scope (SUGGESTED)
+		Or use the "-injection child" option:
+		For this include the pinOptions = "-injection child" in the configuration file input during runtime.
+	 	Example : In axle-zsim-nvmain/tests/simple.cfg file, add the following.
+			sim = {
+				pinOptions = "-injection child"
+				..
+				..
+				..
+				};
+
+
+
+
